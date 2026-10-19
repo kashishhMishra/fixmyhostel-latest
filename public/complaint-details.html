@@ -1,0 +1,299 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complaint Details | FixMyHostel</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="dashboard-page">
+
+    <header class="dashboard-navbar">
+        <div class="logo">Fix<span>MyHostel</span></div>
+
+        <div class="student-profile">
+            <div class="profile-avatar" id="profileAvatar">S</div>
+            <div>
+                <strong id="studentName">Student</strong>
+                <small>Student</small>
+            </div>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+
+        <a href="student-dashboard.html" class="back-home">
+            ← Back to Dashboard
+        </a>
+
+        <div class="dashboard-heading">
+            <div>
+                <span class="section-label">COMPLAINT DETAILS</span>
+                <h1>Maintenance Request</h1>
+                <p>Track the progress of your complaint.</p>
+            </div>
+        </div>
+
+        <section class="complaint-detail-card" id="complaintDetails">
+            <p>Loading complaint details...</p>
+        </section>
+
+    </main>
+
+    <script>
+        const container = document.getElementById("complaintDetails");
+
+        function showMessage(title, message) {
+            container.replaceChildren();
+
+            const heading = document.createElement("h2");
+            heading.textContent = title;
+
+            const paragraph = document.createElement("p");
+            paragraph.textContent = message;
+
+            container.append(heading, paragraph);
+        }
+
+        function addElement(parent, tag, className, text) {
+            const element = document.createElement(tag);
+
+            if (className) {
+                element.className = className;
+            }
+
+            element.textContent = text ?? "";
+            parent.appendChild(element);
+
+            return element;
+        }
+
+        function addDetail(grid, label, value) {
+            const item = document.createElement("div");
+            item.className = "detail-item";
+
+            addElement(item, "span", "", label);
+            addElement(item, "strong", "", value || "Not specified");
+
+            grid.appendChild(item);
+        }
+
+        function showComplaint(complaint) {
+            container.replaceChildren();
+
+            const header = document.createElement("div");
+            header.className = "detail-header";
+
+            const headerInfo = document.createElement("div");
+
+            addElement(
+                headerInfo,
+                "span",
+                "section-label",
+                complaint.category
+            );
+
+            addElement(
+                headerInfo,
+                "h2",
+                "",
+                complaint.description
+            );
+
+            addElement(
+                headerInfo,
+                "p",
+                "",
+                "Complaint #" + complaint.complaint_id
+            );
+
+            addElement(
+                header,
+                "span",
+                "complaint-status",
+                complaint.status
+            );
+
+            header.prepend(headerInfo);
+            container.appendChild(header);
+
+            const grid = document.createElement("div");
+            grid.className = "detail-grid";
+
+            addDetail(grid, "Room Number", complaint.room_number);
+            addDetail(grid, "Issue Category", complaint.category);
+            addDetail(grid, "Preferred Visit Time", complaint.preferred_time);
+            addDetail(
+                grid,
+                "Assigned Worker",
+                complaint.worker_name || "Not assigned yet"
+            );
+            addDetail(
+                grid,
+                "Scheduled Visit",
+                complaint.scheduled_time || "Not scheduled yet"
+            );
+
+            container.appendChild(grid);
+
+            const descriptionBox = document.createElement("div");
+            descriptionBox.className = "description-box";
+
+            addElement(
+                descriptionBox,
+                "span",
+                "",
+                "Problem Description"
+            );
+
+            addElement(
+                descriptionBox,
+                "p",
+                "",
+                complaint.description
+            );
+
+            container.appendChild(descriptionBox);
+
+            const progress = document.createElement("div");
+            progress.className = "status-progress";
+
+            addElement(
+                progress,
+                "span",
+                "progress-title",
+                "Complaint Progress"
+            );
+
+            const steps = document.createElement("div");
+            steps.className = "progress-steps";
+
+            const stages = [
+                { label: "Submitted", active: true },
+                {
+                    label: "Scheduled",
+                    active: ["Scheduled", "In Progress", "Resolved"]
+                        .includes(complaint.status)
+                },
+                {
+                    label: "In Progress",
+                    active: ["In Progress", "Resolved"]
+                        .includes(complaint.status)
+                },
+                {
+                    label: "Resolved",
+                    active: complaint.status === "Resolved"
+                }
+            ];
+
+            stages.forEach((stage, index) => {
+                const step = document.createElement("div");
+                step.className = "progress-step" +
+                    (stage.active ? " active" : "");
+
+                addElement(step, "div", "step-circle", String(index + 1));
+                addElement(step, "span", "", stage.label);
+                steps.appendChild(step);
+
+                if (index < stages.length - 1) {
+                    const line = document.createElement("div");
+                    line.className = "progress-line" +
+                        (stages[index + 1].active ? " active" : "");
+                    steps.appendChild(line);
+                }
+            });
+
+            progress.appendChild(steps);
+            container.appendChild(progress);
+        }
+
+        async function loadComplaint() {
+            let user;
+
+            try {
+                user = JSON.parse(
+                    sessionStorage.getItem("loggedInUser") || "null"
+                );
+            } catch (error) {
+                user = null;
+            }
+
+            if (
+                !user ||
+                user.role !== "student" ||
+                !Number.isInteger(Number(user.id)) ||
+                Number(user.id) <= 0
+            ) {
+                showMessage(
+                    "Please log in again",
+                    "Your student login details are missing or expired."
+                );
+                return;
+            }
+
+            const studentName = user.name || user.user_id || "Student";
+
+            document.getElementById("studentName").textContent = studentName;
+
+            document.getElementById("profileAvatar").textContent =
+                studentName
+                    .trim()
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map(part => part[0].toUpperCase())
+                    .join("") || "S";
+
+            const params = new URLSearchParams(window.location.search);
+            const complaintId = params.get("id");
+
+            if (!complaintId) {
+                showMessage(
+                    "Complaint not found",
+                    "No complaint ID was provided."
+                );
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    "/complaints/student/" + encodeURIComponent(user.id)
+                );
+
+                if (!response.ok) {
+                    throw new Error("Unable to load complaints.");
+                }
+
+                const complaints = await response.json();
+
+                const complaint = complaints.find(
+                    item => item.complaint_id === complaintId
+                );
+
+                if (!complaint) {
+                    showMessage(
+                        "Complaint not found",
+                        "This complaint could not be found in your complaint list."
+                    );
+                    return;
+                }
+
+                showComplaint(complaint);
+
+            } catch (error) {
+                console.error("Complaint details error:", error);
+
+                showMessage(
+                    "Something went wrong",
+                    "Unable to load complaint details. Please refresh and try again."
+                );
+            }
+        }
+
+        loadComplaint();
+    </script>
+
+</body>
+</html>

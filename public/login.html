@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Login | FixMyHostel</title>
+
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body class="login-page">
+
+    <div class="login-box">
+
+        <a href="index.html" class="login-logo">
+            Fix<span>MyHostel</span>
+        </a>
+
+        <h1>Login</h1>
+
+        <form id="loginForm">
+
+            <label for="role">Login as</label>
+
+            <select id="role" required>
+                <option value="student">Student</option>
+                <option value="management">Management</option>
+                <option value="worker">Maintenance Worker</option>
+            </select>
+
+            <label for="userId">ID</label>
+
+            <input
+                type="text"
+                id="userId"
+                placeholder="Enter your ID"
+                autocomplete="username"
+                required
+            >
+
+            <label for="password">Password</label>
+
+            <input
+                type="password"
+                id="password"
+                placeholder="Enter your password"
+                autocomplete="current-password"
+                required
+            >
+
+            <button type="submit" id="loginButton">
+                Login
+            </button>
+
+            <p id="loginMessage" role="alert"></p>
+
+        </form>
+
+        <a href="index.html" class="back-home">
+            ← Back to home
+        </a>
+
+    </div>
+
+    <script>
+        const loginForm = document.getElementById("loginForm");
+        const loginButton = document.getElementById("loginButton");
+        const loginMessage = document.getElementById("loginMessage");
+
+        loginForm.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            const userId = document.getElementById("userId").value.trim();
+            const password = document.getElementById("password").value;
+            const role = document.getElementById("role").value;
+
+            loginMessage.textContent = "";
+            loginButton.disabled = true;
+            loginButton.textContent = "Logging in...";
+
+            try {
+                const response = await fetch("/login", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        user_id: userId,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || !data.success) {
+                    loginMessage.textContent =
+                        data.message || "Login failed. Please try again.";
+                    return;
+                }
+
+                if (!data.user) {
+                    loginMessage.textContent =
+                        "The server did not return user details.";
+                    return;
+                }
+
+                if (data.user.role !== role) {
+                    loginMessage.textContent =
+                        "Selected role does not match this account.";
+                    return;
+                }
+
+                // Clear any previous user's display information.
+                sessionStorage.removeItem("loggedInUser");
+
+                // Save the current user's details for dashboard display.
+                // This is display state, NOT secure authentication.
+                sessionStorage.setItem(
+                    "loggedInUser",
+                    JSON.stringify(data.user)
+                );
+
+                if (data.user.role === "student") {
+                    window.location.href = "student-dashboard.html";
+                } else if (data.user.role === "management") {
+                    window.location.href = "management-dashboard.html";
+                } else if (data.user.role === "worker") {
+                    window.location.href = "worker-dashboard.html";
+                } else {
+                    sessionStorage.removeItem("loggedInUser");
+                    loginMessage.textContent = "Unknown account role.";
+                }
+
+            } catch (error) {
+                console.error("Login error:", error);
+
+                loginMessage.textContent =
+                    "Unable to connect to the server. Please try again.";
+
+            } finally {
+                loginButton.disabled = false;
+                loginButton.textContent = "Login";
+            }
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Management Dashboard | FixMyHostel</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .workflow-card { display:grid; gap:14px; padding:20px; margin-bottom:18px; }
+        .workflow-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+        .workflow-meta { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+        .workflow-tag { display:inline-block; border-radius:20px; padding:6px 11px; background:#f1f1f1; font-size:13px; font-weight:600; }
+        .priority-Urgent { background:#fee2e2; color:#991b1b; }
+        .priority-High { background:#ffedd5; color:#9a3412; }
+        .priority-Medium { background:#fef3c7; color:#92400e; }
+        .priority-Low { background:#dcfce7; color:#166534; }
+        .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+        .evidence { border:1px solid #eee; border-radius:12px; padding:12px; min-width:0; }
+        .evidence img,.evidence video { width:100%; max-height:280px; object-fit:contain; background:#f7f7f7; border-radius:8px; }
+        .workflow-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .workflow-actions select,.workflow-actions input { padding:10px; max-width:100%; }
+        .proof-message { font-size:14px; margin:4px 0; }
+        .workflow-error { color:#b91c1c; }
+        .workflow-success { color:#166534; }
+    </style>
+</head>
+<body class="dashboard-page">
+<header class="dashboard-navbar">
+    <div class="logo">Fix<span>MyHostel</span></div>
+    <div class="student-profile">
+        <div class="profile-avatar">HM</div>
+        <div><strong id="managerName">Hostel Management</strong><small>Management</small></div>
+    </div>
+</header>
+
+<main class="dashboard-container">
+    <div class="dashboard-heading">
+        <div>
+            <span class="section-label">MANAGEMENT DASHBOARD</span>
+            <h1>Complaint Requests</h1>
+            <p>Review priorities, assign maintenance workers, and verify completed repairs.</p>
+        </div>
+    </div>
+
+    <div class="dashboard-stats">
+        <div class="stat-card"><span>Total Complaints</span><strong id="totalComplaints">0</strong></div>
+        <div class="stat-card"><span>Pending / Active</span><strong id="pendingComplaints">0</strong></div>
+        <div class="stat-card"><span>Awaiting Verification</span><strong id="verificationComplaints">0</strong></div>
+        <div class="stat-card"><span>Resolved</span><strong id="resolvedComplaints">0</strong></div>
+    </div>
+
+    <section class="complaints-section">
+        <div class="section-title"><h2>All Complaints</h2></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;">
+            <input id="searchInput" type="search" placeholder="Search complaint, room, student..." aria-label="Search complaints">
+            <select id="statusFilter" aria-label="Filter status">
+                <option value="">All statuses</option>
+                <option>Submitted</option>
+                <option>Scheduled</option>
+                <option>In Progress</option>
+                <option>Verification Pending</option>
+                <option>Resolved</option>
+            </select>
+            <select id="priorityFilter" aria-label="Filter priority">
+                <option value="">All priorities</option>
+                <option>Urgent</option>
+                <option>High</option>
+                <option>Medium</option>
+                <option>Low</option>
+            </select>
+            <button class="assign-button" type="button" id="refreshButton">Refresh</button>
+        </div>
+        <p id="pageMessage" class="proof-message" role="status"></p>
+        <div class="complaint-list" id="complaintList"><p>Loading complaints...</p></div>
+    </section>
+</main>
+
+<script>
+const user = (() => {
+    try { return JSON.parse(sessionStorage.getItem("loggedInUser") || "null"); }
+    catch { return null; }
+})();
+
+const list = document.getElementById("complaintList");
+const message = document.getElementById("pageMessage");
+let complaints = [];
+let workers = [];
+
+if (!user || !Number.isInteger(Number(user.id)) ||
+    !["manager", "management", "admin"].includes(String(user.role).toLowerCase())) {
+    document.querySelector("main").innerHTML =
+        "<h2>Please log in with your management account to view this page.</h2><a href='login.html'>Go to login</a>";
+} else {
+    document.getElementById("managerName").textContent = user.name || "Hostel Management";
+    loadWorkers().then(loadComplaints);
+}
+
+function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+}
+
+function showAttachment(parent, heading, url, type) {
+    const box = el("div", null, "evidence");
+    box.appendChild(el("strong", heading));
+    if (!url) {
+        box.appendChild(el("p", "No file uploaded."));
+        parent.appendChild(box);
+        return;
+    }
+
+    const isVideo = String(type || "").startsWith("video/");
+    const media = document.createElement(isVideo ? "video" : "img");
+    media.src = url;
+    media.controls = isVideo;
+    media.alt = heading;
+    if (isVideo) media.preload = "metadata";
+    box.appendChild(media);
+
+    const link = el("a", "Open file in new tab");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    box.appendChild(link);
+    parent.appendChild(box);
+}
+
+async function loadWorkers() {
+    const response = await fetch("/workers");
+    if (!response.ok) throw new Error("Could not load workers.");
+    workers = await response.json();
+}
+
+async function loadComplaints() {
+    message.textContent = "";
+    try {
+        const response = await fetch("/complaints");
+        if (!response.ok) throw new Error("Could not load complaints.");
+        complaints = await response.json();
+
+        document.getElementById("totalComplaints").textContent = complaints.length;
+        document.getElementById("pendingComplaints").textContent =
+            complaints.filter(c => !["Resolved", "Verification Pending"].includes(c.status)).length;
+        document.getElementById("verificationComplaints").textContent =
+            complaints.filter(c => c.status === "Verification Pending").length;
+        document.getElementById("resolvedComplaints").textContent =
+            complaints.filter(c => c.status === "Resolved").length;
+
+        renderComplaints();
+    } catch (error) {
+        list.replaceChildren(el("p", error.message, "workflow-error"));
+    }
+}
+
+function renderComplaints() {
+    list.replaceChildren();
+    const search = document.getElementById("searchInput").value.trim().toLowerCase();
+    const status = document.getElementById("statusFilter").value;
+    const priority = document.getElementById("priorityFilter").value;
+
+    const filtered = complaints.filter(c => {
+        const text = [c.complaint_id, c.description, c.category,
+            c.room_number, c.student_name, c.worker_name].join(" ").toLowerCase();
+        return (!search || text.includes(search)) &&
+            (!status || c.status === status) &&
+            (!priority || (c.priority || "Medium") === priority);
+    });
+
+    if (!filtered.length) {
+        list.appendChild(el("p", "No complaints match these filters."));
+        return;
+    }
+
+    filtered.forEach(c => {
+        const card = el("article", null, "complaint-row workflow-card");
+        const top = el("div", null, "workflow-top");
+        const titleGroup = el("div");
+        titleGroup.appendChild(el("h3", c.description));
+        titleGroup.appendChild(el("p", `#${c.complaint_id} · Room ${c.room_number} · ${c.category}`));
+        titleGroup.appendChild(el("p", `Student: ${c.student_name || "Unknown"}`));
+        top.appendChild(titleGroup);
+        top.appendChild(el("span", c.status, "complaint-status"));
+        card.appendChild(top);
+
+        const tags = el("div", null, "workflow-meta");
+        tags.appendChild(el("span", `Priority: ${c.priority || "Medium"}`,
+            `workflow-tag priority-${c.priority || "Medium"}`));
+        tags.appendChild(el("span", `Preferred visit: ${c.preferred_time || "Not specified"}`, "workflow-tag"));
+        tags.appendChild(el("span", `Worker: ${c.worker_name || "Not assigned"}`, "workflow-tag"));
+        if (c.scheduled_time) tags.appendChild(el("span", `Scheduled: ${c.scheduled_time}`, "workflow-tag"));
+        card.appendChild(tags);
+
+        const evidence = el("div", null, "evidence-grid");
+        showAttachment(evidence, "Student's original photo/video", c.attachment_path, c.attachment_type);
+        showAttachment(evidence, "Worker's completion proof", c.completion_photo_path, c.completion_photo_type);
+        card.appendChild(evidence);
+
+        if (c.status === "Submitted" || c.status === "Scheduled" || c.status === "In Progress") {
+            const actions = el("div", null, "workflow-actions");
+            const workerSelect = document.createElement("select");
+            workerSelect.setAttribute("aria-label", "Select worker");
+            workerSelect.appendChild(new Option("Select worker", ""));
+            workers.forEach(w => workerSelect.appendChild(new Option(w.name, w.id)));
+            if (c.assigned_worker) workerSelect.value = String(c.assigned_worker);
+
+            const time = document.createElement("input");
+            time.type = "datetime-local";
+            time.setAttribute("aria-label", "Scheduled visit time");
+            if (c.scheduled_time) time.value = c.scheduled_time.replace(" ", "T").slice(0, 16);
+
+            const assign = el("button", c.assigned_worker ? "Update assignment" : "Assign & Schedule", "assign-button");
+            assign.type = "button";
+            assign.addEventListener("click", async () => {
+                if (!workerSelect.value || !time.value) {
+                    alert("Please select a worker and visit time.");
+                    return;
+                }
+                assign.disabled = true;
+                try {
+                    const response = await fetch(`/complaints/${encodeURIComponent(c.complaint_id)}/assign`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            worker_id: Number(workerSelect.value),
+                            scheduled_time: time.value,
+                            manager_id: Number(user.id)
+                        })
+                    });
+                    const result = await response.json();
+                    if (!response.ok || !result.success) throw new Error(result.message || "Assignment failed.");
+                    await loadComplaints();
+                } catch (error) {
+                    alert(error.message);
+                } finally {
+                    assign.disabled = false;
+                }
+            });
+            actions.append(workerSelect, time, assign);
+            card.appendChild(actions);
+        }
+
+        if (c.status === "Verification Pending") {
+            const note = el("p", "Review the worker's completion photo before making a decision.", "proof-message");
+            card.appendChild(note);
+
+            const actions = el("div", null, "workflow-actions");
+            const approve = el("button", "Approve & Mark Resolved", "assign-button");
+            approve.type = "button";
+            approve.addEventListener("click", () => updateStatus(c.complaint_id, "Resolved"));
+
+            const returnButton = el("button", "Return for Further Work", "assign-button");
+            returnButton.type = "button";
+            returnButton.addEventListener("click", () => updateStatus(c.complaint_id, "In Progress"));
+
+            actions.append(approve, returnButton);
+            card.appendChild(actions);
+        }
+
+        list.appendChild(card);
+    });
+}
+
+async function updateStatus(complaintId, status) {
+    const question = status === "Resolved"
+        ? "Have you checked the worker's completion photo and confirmed the repair is done?"
+        : "Return this complaint to the worker for further work?";
+    if (!confirm(question)) return;
+
+    try {
+        const response = await fetch(`/complaints/${encodeURIComponent(complaintId)}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status, manager_id: Number(user.id) })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || "Could not update status.");
+        await loadComplaints();
+    } catch (error) {
+        alert(error.message);
+    }
+}
+
+document.getElementById("searchInput").addEventListener("input", renderComplaints);
+document.getElementById("statusFilter").addEventListener("change", renderComplaints);
+document.getElementById("priorityFilter").addEventListener("change", renderComplaints);
+document.getElementById("refreshButton").addEventListener("click", loadComplaints);
+setInterval(loadComplaints, 30000);
+</script>
+</body>
+</html>

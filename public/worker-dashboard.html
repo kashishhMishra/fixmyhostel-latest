@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worker Dashboard | FixMyHostel</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .workflow-card { display:grid; gap:14px; padding:20px; margin-bottom:18px; }
+        .workflow-top { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+        .workflow-meta { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+        .workflow-tag { display:inline-block; border-radius:20px; padding:6px 11px; background:#f1f1f1; font-size:13px; font-weight:600; }
+        .priority-Urgent { background:#fee2e2; color:#991b1b; }
+        .priority-High { background:#ffedd5; color:#9a3412; }
+        .priority-Medium { background:#fef3c7; color:#92400e; }
+        .priority-Low { background:#dcfce7; color:#166534; }
+        .evidence-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:16px; }
+        .evidence { border:1px solid #eee; border-radius:12px; padding:12px; min-width:0; }
+        .evidence img,.evidence video { width:100%; max-height:280px; object-fit:contain; background:#f7f7f7; border-radius:8px; }
+        .worker-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .worker-actions input { max-width:100%; }
+        .proof-message { font-size:14px; margin:4px 0; }
+        .workflow-error { color:#b91c1c; }
+    </style>
+</head>
+<body class="dashboard-page">
+<header class="dashboard-navbar">
+    <div class="logo">Fix<span>MyHostel</span></div>
+    <div class="student-profile">
+        <div class="profile-avatar" id="workerAvatar">W</div>
+        <div>
+            <strong id="workerName">Maintenance Worker</strong>
+            <small>Maintenance Worker</small>
+        </div>
+    </div>
+</header>
+
+<main class="dashboard-container">
+    <div class="dashboard-heading">
+        <div>
+            <span class="section-label">WORKER DASHBOARD</span>
+            <h1>Assigned Requests</h1>
+            <p>Review the student's evidence, complete the repair, and submit a photo for management approval.</p>
+        </div>
+    </div>
+
+    <div class="dashboard-stats">
+        <div class="stat-card"><span>Total Assigned</span><strong id="totalComplaints">0</strong></div>
+        <div class="stat-card"><span>In Progress</span><strong id="inProgress">0</strong></div>
+        <div class="stat-card"><span>Awaiting Verification</span><strong id="verificationPending">0</strong></div>
+        <div class="stat-card"><span>Resolved</span><strong id="resolved">0</strong></div>
+    </div>
+
+    <section class="complaints-section">
+        <div class="section-title"><h2>My Assigned Requests</h2></div>
+        <p id="pageMessage" class="proof-message" role="status"></p>
+        <div class="complaint-list" id="complaintList"><p>Loading requests...</p></div>
+    </section>
+</main>
+
+<script>
+const user = (() => {
+    try { return JSON.parse(sessionStorage.getItem("loggedInUser") || "null"); }
+    catch { return null; }
+})();
+
+const list = document.getElementById("complaintList");
+const message = document.getElementById("pageMessage");
+
+if (!user || !Number.isInteger(Number(user.id)) ||
+    String(user.role).toLowerCase() !== "worker") {
+    document.querySelector("main").innerHTML =
+        "<h2>Please log in with your worker account to view assigned requests.</h2><a href='login.html'>Go to login</a>";
+} else {
+    document.getElementById("workerName").textContent = user.name || "Maintenance Worker";
+    document.getElementById("workerAvatar").textContent =
+        (user.name || "W").split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase();
+    loadComplaints();
+    setInterval(loadComplaints, 30000);
+}
+
+function el(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = text;
+    if (className) node.className = className;
+    return node;
+}
+
+function showAttachment(parent, heading, url, type) {
+    const box = el("div", null, "evidence");
+    box.appendChild(el("strong", heading));
+
+    if (!url) {
+        box.appendChild(el("p", "No file uploaded."));
+        parent.appendChild(box);
+        return;
+    }
+
+    const isVideo = String(type || "").startsWith("video/");
+    const media = document.createElement(isVideo ? "video" : "img");
+    media.src = url;
+    media.alt = heading;
+    media.controls = isVideo;
+    if (isVideo) media.preload = "metadata";
+    box.appendChild(media);
+
+    const link = el("a", "Open file in new tab");
+    link.href = url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    box.appendChild(link);
+    parent.appendChild(box);
+}
+
+async function loadComplaints() {
+    try {
+        const response = await fetch(`/complaints/worker/${Number(user.id)}`);
+        if (!response.ok) throw new Error("Could not load assigned complaints.");
+
+        const complaints = await response.json();
+
+        document.getElementById("totalComplaints").textContent = complaints.length;
+        document.getElementById("inProgress").textContent =
+            complaints.filter(c => c.status === "In Progress").length;
+        document.getElementById("verificationPending").textContent =
+            complaints.filter(c => c.status === "Verification Pending").length;
+        document.getElementById("resolved").textContent =
+            complaints.filter(c => c.status === "Resolved").length;
+
+        renderComplaints(complaints);
+        message.textContent = "";
+    } catch (error) {
+        list.replaceChildren(el("p", error.message, "workflow-error"));
+    }
+}
+
+function renderComplaints(complaints) {
+    list.replaceChildren();
+
+    if (!complaints.length) {
+        list.appendChild(el("p", "No requests assigned to you yet."));
+        return;
+    }
+
+    complaints.forEach(c => {
+        const card = el("article", null, "complaint-row workflow-card");
+
+        const top = el("div", null, "workflow-top");
+        const titleGroup = el("div");
+        titleGroup.appendChild(el("h3", c.description));
+        titleGroup.appendChild(el("p", `#${c.complaint_id} · Room ${c.room_number} · ${c.category}`));
+        titleGroup.appendChild(el("p", `Student: ${c.student_name || "Unknown"}`));
+        top.append(titleGroup, el("span", c.status, "complaint-status"));
+        card.appendChild(top);
+
+        const tags = el("div", null, "workflow-meta");
+        tags.appendChild(el("span", `Priority: ${c.priority || "Medium"}`,
+            `workflow-tag priority-${c.priority || "Medium"}`));
+        tags.appendChild(el("span", `Preferred visit: ${c.preferred_time || "Not specified"}`, "workflow-tag"));
+        tags.appendChild(el("span", `Scheduled: ${c.scheduled_time || "Not scheduled"}`, "workflow-tag"));
+        card.appendChild(tags);
+
+        const evidence = el("div", null, "evidence-grid");
+        showAttachment(evidence, "Student's original photo/video", c.attachment_path, c.attachment_type);
+        showAttachment(evidence, "Your submitted completion photo", c.completion_photo_path, c.completion_photo_type);
+        card.appendChild(evidence);
+
+        const actions = el("div", null, "worker-actions");
+
+        if (c.status === "Scheduled") {
+            const start = el("button", "Start Work", "assign-button");
+            start.type = "button";
+            start.addEventListener("click", () => startWork(c.complaint_id));
+            actions.appendChild(start);
+        } else if (c.status === "In Progress") {
+            const form = document.createElement("form");
+            form.style.display = "grid";
+            form.style.gap = "10px";
+            form.style.maxWidth = "500px";
+
+            form.appendChild(el("strong", "Upload a photo of the completed repair"));
+            const input = document.createElement("input");
+            input.type = "file";
+            input.name = "completion_photo";
+            input.accept = "image/jpeg,image/png,image/webp,image/gif";
+            input.required = true;
+            input.setAttribute("aria-label", "Completion photo");
+
+            const hint = el("small", "Upload a clear photo showing the repair after completion. Images only, maximum 50 MB.");
+            const submit = el("button", "Submit Proof for Verification", "assign-button");
+            submit.type = "submit";
+
+            const formMessage = el("p", "", "proof-message");
+
+            form.append(input, hint, submit, formMessage);
+            form.addEventListener("submit", async event => {
+                event.preventDefault();
+                const file = input.files[0];
+
+                if (!file) {
+                    formMessage.textContent = "Please select a completion photo.";
+                    return;
+                }
+                if (!file.type.startsWith("image/")) {
+                    formMessage.textContent = "Please upload an image, not a video.";
+                    return;
+                }
+                if (file.size > 50 * 1024 * 1024) {
+                    formMessage.textContent = "The photo must be 50 MB or smaller.";
+                    return;
+                }
+
+                const data = new FormData();
+                data.append("worker_id", String(Number(user.id)));
+                data.append("completion_photo", file);
+
+                submit.disabled = true;
+                submit.textContent = "Uploading...";
+
+                try {
+                    const response = await fetch(
+                        `/complaints/${encodeURIComponent(c.complaint_id)}/completion-proof`,
+                        { method: "POST", body: data }
+                    );
+                    const result = await response.json();
+
+                    if (!response.ok || !result.success) {
+                        throw new Error(result.message || "Could not submit proof.");
+                    }
+
+                    alert("Completion photo submitted. The manager must approve it.");
+                    await loadComplaints();
+                } catch (error) {
+                    formMessage.textContent = error.message;
+                } finally {
+                    submit.disabled = false;
+                    submit.textContent = "Submit Proof for Verification";
+                }
+            });
+
+            actions.appendChild(form);
+        } else if (c.status === "Verification Pending") {
+            actions.appendChild(el("p",
+                "Your proof has been submitted. Please wait for management to approve it.",
+                "proof-message"));
+        } else if (c.status === "Resolved") {
+            actions.appendChild(el("p", "✓ Management approved this repair.", "proof-message"));
+        }
+
+        if (actions.childNodes.length) card.appendChild(actions);
+        list.appendChild(card);
+    });
+}
+
+async function startWork(complaintId) {
+    if (!confirm("Start work on this complaint?")) return;
+
+    try {
+        const response = await fetch(
+            `/complaints/${encodeURIComponent(complaintId)}/start`,
+            {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ worker_id: Number(user.id) })
+            }
+        );
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "Could not start work.");
+        }
+
+        await loadComplaints();
+    } catch (error) {
+        alert(error.message);
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Raise Complaint | FixMyHostel</title>
+
+    <link rel="stylesheet" href="css/style.css">
+
+    <style>
+        /* Styling only for the new form fields */
+        .priority-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 8px;
+        }
+
+        .priority-options label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+
+        .attachment-note {
+            display: block;
+            margin-top: 6px;
+            font-size: 13px;
+            opacity: 0.75;
+        }
+
+        #formMessage {
+            margin-top: 12px;
+        }
+
+        #attachment {
+            max-width: 100%;
+        }
+    </style>
+</head>
+
+<body class="complaint-page">
+
+    <div class="complaint-container">
+
+        <a href="student-dashboard.html" class="back-home">
+            ← Back to Dashboard
+        </a>
+
+        <div class="complaint-header">
+            <span class="section-label">FIXMYHOSTEL</span>
+            <h1>Raise a Complaint</h1>
+            <p>Tell us what's wrong and we'll get it sorted.</p>
+        </div>
+
+        <form class="complaint-form" id="complaintForm">
+
+            <div class="form-row">
+
+                <div class="form-group">
+                    <label for="room">Room Number</label>
+                    <input
+                        type="text"
+                        id="room"
+                        placeholder="e.g. B-304"
+                        required
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="category">Issue Category</label>
+                    <select id="category" required>
+                        <option value="">Select category</option>
+                        <option>Electrical</option>
+                        <option>Plumbing</option>
+                        <option>Furniture</option>
+                        <option>Cleaning</option>
+                        <option>Internet</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+
+            </div>
+
+            <div class="form-group">
+                <label for="description">Describe the Problem</label>
+                <textarea
+                    id="description"
+                    rows="5"
+                    placeholder="Tell us what is wrong..."
+                    required
+                ></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="visit-time">Preferred Visit Time</label>
+                <select id="visit-time" required>
+                    <option value="">Select a convenient time</option>
+                    <option>9 AM - 11 AM</option>
+                    <option>11 AM - 1 PM</option>
+                    <option>2 PM - 4 PM</option>
+                    <option>4 PM - 6 PM</option>
+                    <option>6 PM - 8 PM</option>
+                </select>
+            </div>
+
+            <!-- New feature: Priority -->
+            <div class="form-group">
+                <label for="priority">Complaint Priority</label>
+                <select id="priority" required>
+                    <option value="Low">Low</option>
+                    <option value="Medium" selected>Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                </select>
+                <small class="attachment-note">
+                    Choose Urgent only for issues that need immediate attention.
+                </small>
+            </div>
+
+            <!-- New feature: Photo/video attachment -->
+            <div class="form-group">
+                <label for="attachment">Attach a Photo or Video (Optional)</label>
+                <input
+                    type="file"
+                    id="attachment"
+                    name="attachment"
+                    accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
+                >
+                <small class="attachment-note">
+                    Accepted: JPG, PNG, WEBP, GIF, MP4, WEBM or MOV. Maximum size: 50 MB.
+                </small>
+                <p id="attachmentMessage" role="status"></p>
+            </div>
+
+            <button type="submit" class="submit-complaint" id="submitButton">
+                Submit Complaint
+            </button>
+
+            <p id="formMessage" role="alert"></p>
+
+        </form>
+
+    </div>
+
+    <script>
+        const form = document.getElementById("complaintForm");
+        const submitButton = document.getElementById("submitButton");
+        const formMessage = document.getElementById("formMessage");
+        const attachmentInput = document.getElementById("attachment");
+        const attachmentMessage = document.getElementById("attachmentMessage");
+
+        const allowedTypes = [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+            "video/mp4",
+            "video/webm",
+            "video/quicktime"
+        ];
+
+        const maxFileSize = 50 * 1024 * 1024;
+
+        attachmentInput.addEventListener("change", function () {
+            attachmentMessage.textContent = "";
+            const file = attachmentInput.files[0];
+
+            if (!file) {
+                return;
+            }
+
+            if (!allowedTypes.includes(file.type)) {
+                attachmentMessage.textContent =
+                    "Please select a supported image or video file.";
+                attachmentInput.value = "";
+                return;
+            }
+
+            if (file.size > maxFileSize) {
+                attachmentMessage.textContent =
+                    "The file is larger than 50 MB. Please choose a smaller file.";
+                attachmentInput.value = "";
+                return;
+            }
+
+            attachmentMessage.textContent =
+                "Selected: " + file.name;
+        });
+
+        form.addEventListener("submit", async function (event) {
+            event.preventDefault();
+
+            formMessage.textContent = "";
+            attachmentMessage.textContent = "";
+
+            let user;
+
+            try {
+                user = JSON.parse(
+                    sessionStorage.getItem("loggedInUser") || "null"
+                );
+            } catch (error) {
+                user = null;
+            }
+
+            if (
+                !user ||
+                user.role !== "student" ||
+                !Number.isInteger(Number(user.id)) ||
+                Number(user.id) <= 0
+            ) {
+                formMessage.textContent =
+                    "Your student login has expired. Please log in again.";
+                return;
+            }
+
+            const roomNumber =
+                document.getElementById("room").value.trim();
+
+            const category =
+                document.getElementById("category").value;
+
+            const description =
+                document.getElementById("description").value.trim();
+
+            const preferredTime =
+                document.getElementById("visit-time").value;
+
+            const priority =
+                document.getElementById("priority").value;
+
+            const file = attachmentInput.files[0];
+
+            if (file) {
+                if (!allowedTypes.includes(file.type)) {
+                    formMessage.textContent =
+                        "Please select a supported image or video file.";
+                    return;
+                }
+
+                if (file.size > maxFileSize) {
+                    formMessage.textContent =
+                        "The attachment must be 50 MB or smaller.";
+                    return;
+                }
+            }
+
+            // FormData is required because the request may include a file.
+            const formData = new FormData();
+
+            formData.append("student_id", String(Number(user.id)));
+            formData.append("room_number", roomNumber);
+            formData.append("category", category);
+            formData.append("description", description);
+            formData.append("preferred_time", preferredTime);
+            formData.append("priority", priority);
+
+            if (file) {
+                formData.append("attachment", file);
+            }
+
+            submitButton.disabled = true;
+            submitButton.textContent = "Submitting...";
+
+            try {
+                const response = await fetch("/complaints", {
+                    method: "POST",
+                    body: formData
+                });
+
+                let data;
+
+                try {
+                    data = await response.json();
+                } catch (error) {
+                    throw new Error(
+                        "The server returned an unexpected response. Please check that it is running."
+                    );
+                }
+
+                if (!response.ok || !data.success) {
+                    throw new Error(
+                        data.message || "Could not submit your complaint."
+                    );
+                }
+
+                alert(
+                    "Complaint submitted successfully! Complaint ID: " +
+                    data.complaint_id
+                );
+
+                window.location.href = "student-dashboard.html";
+
+            } catch (error) {
+                console.error("Complaint submission error:", error);
+
+                formMessage.textContent =
+                    error.message ||
+                    "Unable to submit complaint. Please try again.";
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = "Submit Complaint";
+            }
+        });
+    </script>
+
+</body>
+</html>
